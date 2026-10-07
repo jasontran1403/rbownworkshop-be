@@ -6,8 +6,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -26,22 +27,45 @@ public class UploadAsyncService {
 
     private static final int PROGRESS_TICK = 10;
 
+    /** Rank để ưu tiên khi cùng ngày: SUPER_VIP (0) < VIP (1) < NORMAL (2). */
+    private static final Map<String, Integer> TYPE_RANK = Map.of(
+            "SUPER_VIP", 0,
+            "VIP",       1,
+            "NORMAL",    2
+    );
+
     /**
      * Truncate + insert data. Cập nhật savedRows liên tục vào registry.
      * Return void ngay lập tức, code chạy ở thread từ pool "uploadExecutor".
+     *
+     * STT (sheetSequence) được đánh dùng chung cho CẢ 3 loại:
+     *   1. Sort theo orderDate ASC (null xếp cuối)
+     *   2. Cùng ngày: SUPER_VIP → VIP → NORMAL
+     *   3. Đánh số 1..N theo thứ tự đã sort
      */
     @Async("uploadExecutor")
     public void process(String taskId, List<ShopOrder> parsed) {
         try {
             repository.truncate();
 
-            Map<String, Long> seqByType = new HashMap<>();
+            // Sort toàn bộ danh sách để đánh STT dùng chung
+            parsed.sort(
+                    Comparator
+                            // Null orderDate xếp cuối
+                            .comparing(ShopOrder::getOrderDate,
+                                    Comparator.nullsLast(Comparator.naturalOrder()))
+                            // Cùng ngày: VIP ưu tiên hơn
+                            .thenComparing((ShopOrder o) ->
+                                    TYPE_RANK.getOrDefault(o.getSheetType(), Integer.MAX_VALUE))
+            );
+
             LocalDateTime now = LocalDateTime.now();
             int saved = 0;
+            int seq = 0;
 
             for (ShopOrder o : parsed) {
-                long nextSeq = seqByType.merge(o.getSheetType(), 1L, Long::sum);
-                o.setSheetSequence((int) nextSeq);
+                seq++;
+                o.setSheetSequence(seq);
                 o.setCreatedAt(now);
                 repository.save(o);
                 saved++;

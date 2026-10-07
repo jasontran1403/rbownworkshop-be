@@ -15,6 +15,12 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
+/**
+ * Parser form mới (file Update_Form_Website.xlsx):
+ *   16 cột, 3 sheet (Khách Order / Ưu Tiên / Ưu Tiên Vip).
+ *
+ *   MATCH THEO TÊN HEADER (normalized), KHÔNG theo vị trí cột.
+ */
 @Service
 public class ExcelParserService {
 
@@ -25,6 +31,27 @@ public class ExcelParserService {
         SHEET_KEYWORD_MAPPING.put("khachorder", "NORMAL");
     }
 
+    /** Mapping từ header (normalized, bỏ dấu, lowercase, bỏ khoảng trắng) → tên field. */
+    private static final Map<String, String> HEADER_TO_FIELD = new LinkedHashMap<>();
+    static {
+        HEADER_TO_FIELD.put("tenkhach",          "customerName");
+        HEADER_TO_FIELD.put("choorder",          "orderPlace");
+        HEADER_TO_FIELD.put("goidichvu",         "servicePackage");
+        HEADER_TO_FIELD.put("taikhoan",          "account");
+        HEADER_TO_FIELD.put("dangkyuutien",      "priorityRegister");
+        HEADER_TO_FIELD.put("phiuutien",         "priorityFee");
+        HEADER_TO_FIELD.put("dangkychonvung",    "regionRegister");
+        HEADER_TO_FIELD.put("vungchon",          "regionSelected");
+        HEADER_TO_FIELD.put("dangkychongame",    "gameRegister");
+        HEADER_TO_FIELD.put("gamechon",          "gameSelected");
+        HEADER_TO_FIELD.put("giachot",           "servicePrice");
+        HEADER_TO_FIELD.put("thucnhan",          "actualAmount");
+        HEADER_TO_FIELD.put("ngaydat",           "orderDate");
+        HEADER_TO_FIELD.put("songaytreo",        "holdDays");
+        HEADER_TO_FIELD.put("tinhtranghoantien", "refundNoteStatus");
+        HEADER_TO_FIELD.put("tinhtrangdon",      "orderNoteStatus");
+    }
+
     private static final DateTimeFormatter[] DATE_FORMATS = {
             DateTimeFormatter.ofPattern("M/d/yyyy"),
             DateTimeFormatter.ofPattern("d/M/yyyy"),
@@ -33,8 +60,6 @@ public class ExcelParserService {
             DateTimeFormatter.ofPattern("yyyy-M-d"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd"),
     };
-
-    private static final int MAX_COLS = 26;
 
     public List<ShopOrder> parse(MultipartFile file) {
         try (InputStream is = file.getInputStream();
@@ -78,6 +103,13 @@ public class ExcelParserService {
         int headerRow = detectHeaderRow(sheet);
         if (headerRow < 0) return orders;
 
+        // Build mapping field → column index cho sheet này
+        Map<String, Integer> fieldToCol = extractFieldColumns(sheet.getRow(headerRow));
+
+        // Tối thiểu phải có cột "Tài Khoản" để biết dòng là data
+        Integer accountCol = fieldToCol.get("account");
+        if (accountCol == null) return orders;
+
         int lastRow = sheet.getLastRowNum();
         boolean skipNextDataRow = false;
 
@@ -99,65 +131,71 @@ public class ExcelParserService {
                 skipNextDataRow = false;
                 continue;
             }
-            if (isEmptyRow(row)) continue;
+            if (isEmptyRow(row, fieldToCol)) continue;
 
-            String account = getString(row, 3);
+            String account = getString(row, accountCol);
             if (account == null || account.trim().isEmpty()) continue;
 
-            String rawL = getCellString(row.getCell(11));
-            String rawM = getCellString(row.getCell(12));
+            ShopOrder.ShopOrderBuilder b = ShopOrder.builder().sheetType(sheetType);
 
-            DateOrientation orientation = detectOrientation(rawM);
-            if (orientation == DateOrientation.UNKNOWN) {
-                orientation = detectOrientation(rawL);
-            }
+            b.customerName  (strCol(row, fieldToCol, "customerName"));
+            b.orderPlace    (strCol(row, fieldToCol, "orderPlace"));
+            b.servicePackage(strCol(row, fieldToCol, "servicePackage"));
+            b.account       (account.trim());
+            b.priorityRegister(strCol(row, fieldToCol, "priorityRegister"));
+            b.priorityFee   (bdCol(row, fieldToCol, "priorityFee"));
+            b.regionRegister(strCol(row, fieldToCol, "regionRegister"));
+            b.regionSelected(strCol(row, fieldToCol, "regionSelected"));
+            b.gameRegister  (strCol(row, fieldToCol, "gameRegister"));
+            b.gameSelected  (strCol(row, fieldToCol, "gameSelected"));
+            b.servicePrice  (bdCol(row, fieldToCol, "servicePrice"));
+            b.actualAmount  (bdCol(row, fieldToCol, "actualAmount"));
+            b.orderDate     (dateCol(row, fieldToCol, "orderDate"));
+            b.holdDays      (intCol(row, fieldToCol, "holdDays"));
+            b.refundNoteStatus(strCol(row, fieldToCol, "refundNoteStatus"));
+            b.orderNoteStatus (strCol(row, fieldToCol, "orderNoteStatus"));
 
-            LocalDate orderDate = parseDateByOrientation(rawL, orientation);
-            LocalDate deliveryDate = parseDateByOrientation(rawM, orientation);
-            if (deliveryDate == null) {
-                deliveryDate = parseFormulaDelivery(row, orderDate);
-            }
-
-            ShopOrder o = ShopOrder.builder()
-                    .customerName(getString(row, 0))
-                    .orderPlace(getString(row, 1))
-                    .servicePackage(getString(row, 2))
-                    .account(account.trim())
-                    .password(getString(row, 4))
-                    .protectionCode(formatProtectionCode(getString(row, 5)))
-                    .regionIp(getString(row, 7))
-                    .game20k(getString(row, 8))
-                    .servicePrice(getBigDecimal(row, 9))
-                    .actualAmount(getBigDecimal(row, 10))
-                    .orderDate(orderDate)
-                    .deliveryDate(deliveryDate)
-                    .holdDays(getInteger(row, 13))
-                    .regionTransferStatus(getString(row, 14))
-                    .depositRefund(getString(row, 15))
-                    .noteRBown(getString(row, 16))
-                    .priorityRegister(getString(row, 18))
-                    .priorityFee(getBigDecimal(row, 19))
-                    .refundNoteStatus(getString(row, 20))
-                    .orderNoteStatus(getString(row, 21))
-                    .noteLogAcc(getString(row, 22))
-                    .noteAddMoneyLogAcc(getString(row, 23))
-                    .noteAccError(getString(row, 24))
-                    .noteAddMoneyFixAcc(getString(row, 25))
-                    .sheetType(sheetType)
-                    .build();
-
-            orders.add(o);
+            orders.add(b.build());
         }
 
         return orders;
     }
 
-    private String formatProtectionCode(String raw) {
-        if (raw == null) return null;
-        String trimmed = raw.trim();
-        if (trimmed.isEmpty()) return trimmed;
-        return trimmed.replaceAll("\\s+", "\n");
+    // ============================================================
+    //  Header detection / mapping
+    // ============================================================
+
+    private Map<String, Integer> extractFieldColumns(Row headerRow) {
+        Map<String, Integer> out = new HashMap<>();
+        if (headerRow == null) return out;
+        short last = headerRow.getLastCellNum();
+        for (int c = 0; c < last; c++) {
+            String raw = getCellString(headerRow.getCell(c));
+            if (raw == null) continue;
+            String key = norm(raw);
+            String field = HEADER_TO_FIELD.get(key);
+            if (field != null && !out.containsKey(field)) {
+                out.put(field, c);
+            }
+        }
+        return out;
     }
+
+    private int detectHeaderRow(Sheet sheet) {
+        int maxScan = Math.min(sheet.getLastRowNum(), 10);
+        for (int i = 0; i <= maxScan; i++) {
+            Row row = sheet.getRow(i);
+            if (row == null) continue;
+            // Row được coi là header nếu đủ ≥ 4 header khớp
+            Map<String, Integer> cols = extractFieldColumns(row);
+            if (cols.size() >= 4 && cols.containsKey("account")) return i;
+        }
+        return -1;
+    }
+
+    // ============================================================
+    //  Date orientation (giữ nguyên logic cũ để đoán M/D vs D/M)
+    // ============================================================
 
     private enum DateOrientation { MDY, DMY, UNKNOWN }
 
@@ -222,23 +260,9 @@ public class ExcelParserService {
         return null;
     }
 
-    private LocalDate parseFormulaDelivery(Row row, LocalDate orderDate) {
-        Cell cell = row.getCell(12);
-        if (cell == null) return null;
-        try {
-            if (cell.getCellType() != CellType.FORMULA) return null;
-            String formula = cell.getCellFormula();
-            if (formula.matches("(?i)^L\\d+\\s*\\+\\s*\\(?J\\d+\\s*/\\s*10000\\)?$")) {
-                if (orderDate == null) return null;
-                BigDecimal price = getBigDecimal(row, 9);
-                if (price == null) return orderDate;
-                int days = price.divide(BigDecimal.valueOf(10000), 0,
-                        java.math.RoundingMode.DOWN).intValue();
-                return orderDate.plusDays(days);
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
+    // ============================================================
+    //  Row helpers
+    // ============================================================
 
     private boolean isRowMergedFromA(Sheet sheet, int rowIndex) {
         for (int m = 0; m < sheet.getNumMergedRegions(); m++) {
@@ -263,8 +287,8 @@ public class ExcelParserService {
                 || n.contains("chiacophan");
     }
 
-    private boolean isEmptyRow(Row row) {
-        for (int c = 0; c < MAX_COLS; c++) {
+    private boolean isEmptyRow(Row row, Map<String, Integer> fieldToCol) {
+        for (Integer c : fieldToCol.values()) {
             Cell cell = row.getCell(c);
             if (cell != null && cell.getCellType() != CellType.BLANK) {
                 String v = getCellString(cell);
@@ -274,24 +298,46 @@ public class ExcelParserService {
         return true;
     }
 
-    private int detectHeaderRow(Sheet sheet) {
-        int maxScan = Math.min(sheet.getLastRowNum(), 10);
-        for (int i = 0; i <= maxScan; i++) {
-            Row row = sheet.getRow(i);
-            if (row == null) continue;
-            String d = norm(getString(row, 3));
-            String c = norm(getString(row, 2));
-            String e = norm(getString(row, 4));
-            if (d.contains("taikhoan") || c.contains("goidichvu") || e.contains("matkhau")) {
-                return i;
-            }
-        }
-        return -1;
+    // ============================================================
+    //  Cell → field helpers
+    // ============================================================
+
+    private String strCol(Row row, Map<String, Integer> cols, String field) {
+        Integer c = cols.get(field);
+        if (c == null) return null;
+        return getString(row, c);
     }
+
+    private BigDecimal bdCol(Row row, Map<String, Integer> cols, String field) {
+        Integer c = cols.get(field);
+        if (c == null) return null;
+        return getBigDecimal(row, c);
+    }
+
+    private Integer intCol(Row row, Map<String, Integer> cols, String field) {
+        Integer c = cols.get(field);
+        if (c == null) return null;
+        return getInteger(row, c);
+    }
+
+    private LocalDate dateCol(Row row, Map<String, Integer> cols, String field) {
+        Integer c = cols.get(field);
+        if (c == null) return null;
+        String raw = getCellString(row.getCell(c));
+        DateOrientation orientation = detectOrientation(raw);
+        return parseDateByOrientation(raw, orientation);
+    }
+
+    // ============================================================
+    //  Utils
+    // ============================================================
 
     private String norm(String s) {
         if (s == null) return "";
-        String x = Normalizer.normalize(s, Normalizer.Form.NFD);
+        // Quan trọng: Java NFD KHÔNG decompose "Đ"/"đ" (U+0110/U+0111) vì
+        // chúng không có canonical decomposition. Phải replace tay trước.
+        String pre = s.replace('Đ', 'D').replace('đ', 'd');
+        String x = Normalizer.normalize(pre, Normalizer.Form.NFD);
         x = x.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         return x.toLowerCase().replaceAll("\\s+", "").trim();
     }
@@ -299,9 +345,9 @@ public class ExcelParserService {
     private String normalizeSheetName(String name) {
         if (name == null) return "";
         String x = name
-                .replace("\u200B", "").replace("\u200C", "")
-                .replace("\u200D", "").replace("\uFEFF", "")
-                .replace("\u00A0", " ");
+                .replace("​", "").replace("‌", "")
+                .replace("‍", "").replace("﻿", "")
+                .replace(" ", " ");
         x = Normalizer.normalize(x, Normalizer.Form.NFD);
         x = x.replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         return x.toLowerCase().replaceAll("[^a-z0-9]", "");

@@ -35,26 +35,34 @@ public class ShopOrderController {
     private static final int SEARCH_MAX  = 5;
     private static final long SEARCH_WIN = 1_000L;
 
+    // ============================================================
+    //  Processing number — 3 loại
+    // ============================================================
+
     @GetMapping("/processing-number")
     public ResponseEntity<ProcessingNumberResponse> getProcessingNumber() {
-        return ResponseEntity.ok(ProcessingNumberResponse.builder()
-                .currentProcessingNumber(configService.getCurrentProcessingNumber())
-                .build());
-    }
-
-    @PutMapping("/processing-number")
-    public ResponseEntity<ProcessingNumberResponse> updateProcessingNumber(
-            @RequestParam(value = "value", required = false) Integer value) {
-        Integer updated = configService.setCurrentProcessingNumber(value);
-        return ResponseEntity.ok(ProcessingNumberResponse.builder()
-                .currentProcessingNumber(updated)
-                .build());
+        return ResponseEntity.ok(configService.getAll());
     }
 
     /**
-     * Trả ngay taskId + estimate. Server tiếp tục truncate + insert ở thread riêng.
-     * FE poll /upload/status/{taskId} để lấy progress + kết quả cuối.
+     * Update một số đang xử lý theo loại.
+     *   PUT /api/shop-orders/processing-number?type=SUPER_VIP&value=12
+     *   PUT /api/shop-orders/processing-number?type=VIP      (value để trống = xoá)
+     *
+     * Nếu không truyền type → mặc định NORMAL (giữ tương thích ngược).
      */
+    @PutMapping("/processing-number")
+    public ResponseEntity<ProcessingNumberResponse> updateProcessingNumber(
+            @RequestParam(value = "type",  required = false) String type,
+            @RequestParam(value = "value", required = false) Integer value) {
+        String sheetType = (type == null || type.isBlank()) ? "NORMAL" : type;
+        return ResponseEntity.ok(configService.setByType(sheetType, value));
+    }
+
+    // ============================================================
+    //  Upload
+    // ============================================================
+
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UploadStartResponse> upload(@RequestParam("file") MultipartFile file) {
         UploadStartResponse res = service.startUpload(file);
@@ -67,6 +75,10 @@ public class ShopOrderController {
         if (task == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok(task);
     }
+
+    // ============================================================
+    //  Search
+    // ============================================================
 
     @GetMapping("/search")
     public ResponseEntity<SearchResponse> search(

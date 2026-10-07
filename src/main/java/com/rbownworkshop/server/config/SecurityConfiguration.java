@@ -32,12 +32,14 @@ public class SecurityConfiguration {
             "/api/auth",
             "/api/public",
             "/api/shop-orders",
+            "/api/management-access",
     };
 
     private static final String[] WHITE_LIST_URL = {
             "/api/auth/**",
             "/api/public/**",
             "/api/shop-orders/**",
+            "/api/management-access/**",
             "/configuration/ui",
             "/configuration/security",
             "/webjars/**"

@@ -11,6 +11,12 @@ import java.util.List;
 @Builder
 public class SearchResponse {
     private List<OrderResult> results;
+
+    /** 3 số "đang xử lý" theo loại. */
+    private ProcessingNumberResponse processingNumbers;
+
+    /** Giữ lại cho tương thích ngược (= processingNumbers.normal). */
     private Integer currentProcessingNumber;
+
     private Integer totalOrders;
 }
