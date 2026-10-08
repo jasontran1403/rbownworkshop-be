@@ -60,6 +60,27 @@ public class ShopOrderController {
     }
 
     // ============================================================
+    //  Announcement (HTML) — hiển thị bên trang tra cứu, edit ở /management
+    // ============================================================
+
+    @GetMapping("/announcement")
+    public ResponseEntity<Map<String, Object>> getAnnouncement() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("content", configService.getAnnouncement());
+        return ResponseEntity.ok(body);
+    }
+
+    @PutMapping("/announcement")
+    public ResponseEntity<Map<String, Object>> updateAnnouncement(
+            @RequestBody(required = false) Map<String, String> body) {
+        String content = (body == null) ? "" : body.getOrDefault("content", "");
+        String saved = configService.setAnnouncement(content);
+        Map<String, Object> resp = new HashMap<>();
+        resp.put("content", saved);
+        return ResponseEntity.ok(resp);
+    }
+
+    // ============================================================
     //  Upload
     // ============================================================
 
@@ -87,7 +108,37 @@ public class ShopOrderController {
             HttpServletRequest request) {
         String ip = getClientIp(request);
         rateLimitService.check("search:" + ip, SEARCH_MAX, SEARCH_WIN);
-        return ResponseEntity.ok(service.search(account, sheetType));
+
+        // Validate + sanitize input tra cứu
+        String cleanAccount = sanitizeAccountInput(account);
+        String cleanSheetType = sanitizeSheetType(sheetType);
+
+        return ResponseEntity.ok(service.search(cleanAccount, cleanSheetType));
+    }
+
+    /** Chuẩn hoá & giới hạn chuỗi tra cứu — defence-in-depth cạnh PreparedStatement. */
+    private static final int ACCOUNT_MAX_LEN = 100;
+
+    private String sanitizeAccountInput(String raw) {
+        if (raw == null) return "";
+        // Bỏ control chars (0x00-0x1F, 0x7F) + ký tự HTML nguy hiểm
+        String s = raw.replaceAll("[\\x00-\\x1F\\x7F]", "")
+                      .replaceAll("[<>]", "")
+                      .trim();
+        if (s.length() > ACCOUNT_MAX_LEN) {
+            s = s.substring(0, ACCOUNT_MAX_LEN);
+        }
+        return s;
+    }
+
+    /** Chỉ chấp nhận 3 enum sheetType cho phép; bất cứ thứ gì khác → null (search tất cả). */
+    private String sanitizeSheetType(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        String s = raw.trim().toUpperCase();
+        return switch (s) {
+            case "NORMAL", "VIP", "SUPER_VIP" -> s;
+            default -> null;
+        };
     }
 
     @GetMapping("/management/search")

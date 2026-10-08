@@ -46,5 +46,13 @@ public class SchemaMigrationService {
                 log.warn("[schema-migration] could not drop column {}: {}", col, e.getMessage());
             }
         }
+
+        // Mở rộng app_config.config_value để chứa HTML của thông báo (có thể dài)
+        try {
+            jdbc.execute("ALTER TABLE app_config MODIFY COLUMN config_value LONGTEXT");
+            log.info("[schema-migration] extended app_config.config_value to LONGTEXT");
+        } catch (Exception e) {
+            log.warn("[schema-migration] could not extend app_config.config_value: {}", e.getMessage());
+        }
     }
 }

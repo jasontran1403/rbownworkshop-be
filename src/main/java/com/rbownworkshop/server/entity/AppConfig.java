@@ -16,6 +16,6 @@ public class AppConfig {
     @Column(name = "config_key", length = 100)
     private String key;
 
-    @Column(name = "config_value", length = 500)
+    @Column(name = "config_value", columnDefinition = "LONGTEXT")
     private String value;
 }

@@ -16,6 +16,7 @@ public class ConfigService {
     private static final String KEY_NORMAL    = "current_processing_number";          // giữ cũ cho NORMAL
     private static final String KEY_VIP       = "current_processing_number_vip";
     private static final String KEY_SUPER_VIP = "current_processing_number_super_vip";
+    private static final String KEY_ANNOUNCEMENT = "announcement_html";
 
     /** Map sheetType → config key. */
     private static final Map<String, String> KEY_BY_TYPE = Map.of(
@@ -61,6 +62,30 @@ public class ConfigService {
     public Integer setCurrentProcessingNumber(Integer value) {
         writeInt(KEY_NORMAL, value);
         return value;
+    }
+
+    // ============================================================
+    //  Announcement (HTML — hiển thị bên trang tra cứu)
+    // ============================================================
+
+    public String getAnnouncement() {
+        return repository.findById(KEY_ANNOUNCEMENT)
+                .map(AppConfig::getValue)
+                .orElse("");
+    }
+
+    @Transactional
+    public String setAnnouncement(String html) {
+        String val = html == null ? "" : html;
+        if (val.isEmpty()) {
+            repository.deleteById(KEY_ANNOUNCEMENT);
+            return "";
+        }
+        AppConfig cfg = repository.findById(KEY_ANNOUNCEMENT)
+                .orElse(AppConfig.builder().key(KEY_ANNOUNCEMENT).build());
+        cfg.setValue(val);
+        repository.save(cfg);
+        return val;
     }
 
     // ============================================================
