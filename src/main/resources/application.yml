@@ -25,3 +25,9 @@ application:
       expiration: 604800000
       refresh-token:
         expiration: 604800000
+
+app:
+  upload:
+    # ${user.home} = /Users/<bạn> trên Mac, C:\Users\<bạn> trên Windows.
+    # Spring tự expand → cả 2 OS đều ra Desktop của user đang chạy JVM.
+    image-dir: ${user.home}/Desktop/rbownworkshop-storage

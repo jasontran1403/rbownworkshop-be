@@ -6,10 +6,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,31 +29,31 @@ public class UploadAsyncService {
 
     /**
      * Truncate + insert data. Cập nhật savedRows liên tục vào registry.
-     * Return void ngay lập tức, code chạy ở thread từ pool "uploadExecutor".
      *
-     * STT (sheetSequence) được đánh RIÊNG cho TỪNG LOẠI:
-     *   - Trong mỗi loại (SUPER_VIP / VIP / NORMAL):
-     *       1. Sort theo orderDate ASC (null xếp cuối)
-     *       2. Đánh số 1..N theo thứ tự đã sort
-     *   - 3 loại độc lập, mỗi loại đều bắt đầu từ 1.
+     * STT (sheetSequence) được đánh ĐỘC LẬP cho TỪNG LOẠI (sheetType):
+     *   - SUPER_VIP (Ưu tiên VIP): 1..N
+     *   - VIP       (Ưu tiên):     1..N
+     *   - NORMAL    (Khách Order): 1..N
+     *
+     * KHÔNG sort lại — giữ ĐÚNG thứ tự dòng trên Excel (sau khi ExcelParserService
+     * đã lọc header / dòng tổng kết / dòng rỗng). Nhờ vậy:
+     *   dòng Excel #N (bỏ header) ↔ STT = N trong loại tương ứng.
      */
     @Async("uploadExecutor")
     public void process(String taskId, List<ShopOrder> parsed) {
         try {
             repository.truncate();
 
-            // Group theo sheetType rồi đánh STT riêng từng nhóm
+            // 1. Group theo sheetType, GIỮ NGUYÊN thứ tự parse gốc trong mỗi group.
             Map<String, List<ShopOrder>> byType = new LinkedHashMap<>();
             for (ShopOrder o : parsed) {
                 String type = o.getSheetType() == null ? "" : o.getSheetType();
                 byType.computeIfAbsent(type, k -> new ArrayList<>()).add(o);
             }
 
-            for (List<ShopOrder> group : byType.values()) {
-                group.sort(
-                        Comparator.comparing(ShopOrder::getOrderDate,
-                                Comparator.nullsLast(Comparator.naturalOrder()))
-                );
+            // 2. Mỗi group đánh STT 1..N theo đúng thứ tự Excel (không sort).
+            for (Map.Entry<String, List<ShopOrder>> e : byType.entrySet()) {
+                List<ShopOrder> group = e.getValue();
                 int seq = 0;
                 for (ShopOrder o : group) {
                     seq++;
@@ -63,15 +61,19 @@ public class UploadAsyncService {
                 }
             }
 
+            // 3. Save theo đúng thứ tự STT đã đánh (từng group) → id DB tăng
+            //    cùng chiều với sheetSequence trong mỗi loại.
             LocalDateTime now = LocalDateTime.now();
             int saved = 0;
 
-            for (ShopOrder o : parsed) {
-                o.setCreatedAt(now);
-                repository.save(o);
-                saved++;
-                if (saved % PROGRESS_TICK == 0) {
-                    taskRegistry.updateSavedRows(taskId, saved);
+            for (List<ShopOrder> group : byType.values()) {
+                for (ShopOrder o : group) {
+                    o.setCreatedAt(now);
+                    repository.save(o);
+                    saved++;
+                    if (saved % PROGRESS_TICK == 0) {
+                        taskRegistry.updateSavedRows(taskId, saved);
+                    }
                 }
             }
 

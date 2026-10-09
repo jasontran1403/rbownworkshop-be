@@ -13,12 +13,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ConfigService {
 
-    private static final String KEY_NORMAL    = "current_processing_number";          // giữ cũ cho NORMAL
-    private static final String KEY_VIP       = "current_processing_number_vip";
-    private static final String KEY_SUPER_VIP = "current_processing_number_super_vip";
+    private static final String KEY_NORMAL       = "current_processing_number";
+    private static final String KEY_VIP          = "current_processing_number_vip";
+    private static final String KEY_SUPER_VIP    = "current_processing_number_super_vip";
     private static final String KEY_ANNOUNCEMENT = "announcement_html";
 
-    /** Map sheetType → config key. */
     private static final Map<String, String> KEY_BY_TYPE = Map.of(
             "NORMAL",    KEY_NORMAL,
             "VIP",       KEY_VIP,
@@ -26,9 +25,10 @@ public class ConfigService {
     );
 
     private final AppConfigRepository repository;
+    private final ImageStorageService imageStorage;
 
     // ============================================================
-    //  3 loại
+    //  3 loại processing number
     // ============================================================
 
     public ProcessingNumberResponse getAll() {
@@ -43,20 +43,12 @@ public class ConfigService {
     @Transactional
     public ProcessingNumberResponse setByType(String sheetType, Integer value) {
         String key = KEY_BY_TYPE.get(sheetType);
-        if (key == null) {
-            throw new IllegalArgumentException("sheetType không hợp lệ: " + sheetType);
-        }
+        if (key == null) throw new IllegalArgumentException("sheetType không hợp lệ: " + sheetType);
         writeInt(key, value);
         return getAll();
     }
 
-    // ============================================================
-    //  Backwards-compat API (dùng key NORMAL)
-    // ============================================================
-
-    public Integer getCurrentProcessingNumber() {
-        return readInt(KEY_NORMAL);
-    }
+    public Integer getCurrentProcessingNumber() { return readInt(KEY_NORMAL); }
 
     @Transactional
     public Integer setCurrentProcessingNumber(Integer value) {
@@ -65,7 +57,7 @@ public class ConfigService {
     }
 
     // ============================================================
-    //  Announcement (HTML — hiển thị bên trang tra cứu)
+    //  Announcement (HTML) — có cleanup orphan ảnh
     // ============================================================
 
     public String getAnnouncement() {
@@ -77,10 +69,22 @@ public class ConfigService {
     @Transactional
     public String setAnnouncement(String html) {
         String val = html == null ? "" : html;
+
+        // Lấy nội dung cũ để so sánh & xóa ảnh orphan
+        String oldHtml = repository.findById(KEY_ANNOUNCEMENT)
+                .map(AppConfig::getValue)
+                .orElse("");
+
         if (val.isEmpty()) {
+            // Xóa thông báo → xóa luôn mọi ảnh trong đó
+            imageStorage.cleanupOrphans(oldHtml, "");
             repository.deleteById(KEY_ANNOUNCEMENT);
             return "";
         }
+
+        // Cập nhật thông báo + xóa những ảnh không còn được tham chiếu
+        imageStorage.cleanupOrphans(oldHtml, val);
+
         AppConfig cfg = repository.findById(KEY_ANNOUNCEMENT)
                 .orElse(AppConfig.builder().key(KEY_ANNOUNCEMENT).build());
         cfg.setValue(val);
@@ -94,18 +98,13 @@ public class ConfigService {
 
     private Integer readInt(String key) {
         return repository.findById(key)
-                .map(c -> {
-                    try { return Integer.parseInt(c.getValue()); }
-                    catch (NumberFormatException e) { return null; }
-                })
+                .map(c -> { try { return Integer.parseInt(c.getValue()); }
+                catch (NumberFormatException e) { return null; } })
                 .orElse(null);
     }
 
     private void writeInt(String key, Integer value) {
-        if (value == null) {
-            repository.deleteById(key);
-            return;
-        }
+        if (value == null) { repository.deleteById(key); return; }
         AppConfig cfg = repository.findById(key)
                 .orElse(AppConfig.builder().key(key).build());
         cfg.setValue(String.valueOf(value));

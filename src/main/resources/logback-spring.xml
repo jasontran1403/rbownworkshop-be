@@ -25,6 +25,16 @@
         <appender-ref ref="CONSOLE"/>
     </logger>
 
+    <!--
+        Tắt noise từ Apache POI khi file Excel chứa hyperlink / mailto có ký tự
+        lạ (dấu |, space, tiếng Việt có dấu...). POI tự fallback về dummy URI
+        rồi vẫn mở file bình thường — chỉ cần che log đi.
+    -->
+    <logger name="org.apache.poi.openxml4j.opc.PackageRelationshipCollection" level="OFF"/>
+
+    <!-- Chặn luôn các log WARN/INFO lặt vặt khác của cụm OPC trong POI -->
+    <logger name="org.apache.poi.openxml4j" level="ERROR"/>
+
     <!-- Root logger vẫn log ra console như thường -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

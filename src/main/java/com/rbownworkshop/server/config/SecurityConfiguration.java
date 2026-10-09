@@ -9,6 +9,7 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -33,6 +34,7 @@ public class SecurityConfiguration {
             "/api/public",
             "/api/shop-orders",
             "/api/management-access",
+            "/uploads",
     };
 
     private static final String[] WHITE_LIST_URL = {
@@ -40,6 +42,7 @@ public class SecurityConfiguration {
             "/api/public/**",
             "/api/shop-orders/**",
             "/api/management-access/**",
+            "/uploads/**",
             "/configuration/ui",
             "/configuration/security",
             "/webjars/**"

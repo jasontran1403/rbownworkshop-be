@@ -31,7 +31,7 @@ public interface ShopOrderRepository extends JpaRepository<ShopOrder, Long>, Sho
         SELECT s FROM ShopOrder s
         WHERE (:keyword IS NULL OR LOWER(s.account) LIKE LOWER(CONCAT('%', :keyword, '%')))
           AND (:sheetType IS NULL OR s.sheetType = :sheetType)
-        ORDER BY s.id DESC
+        ORDER BY s.id ASC
     """)
     List<ShopOrder> searchForManagement(@Param("keyword") String keyword,
                                         @Param("sheetType") String sheetType);
@@ -40,7 +40,7 @@ public interface ShopOrderRepository extends JpaRepository<ShopOrder, Long>, Sho
         SELECT s FROM ShopOrder s
         WHERE (:keyword IS NULL OR LOWER(s.account) LIKE LOWER(CONCAT('%', :keyword, '%')))
           AND (:sheetType IS NULL OR s.sheetType = :sheetType)
-        ORDER BY s.id DESC
+        ORDER BY s.id ASC
     """)
     List<ShopOrder> searchForManagementPaged(@Param("keyword") String keyword,
                                              @Param("sheetType") String sheetType,
